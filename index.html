@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AirWatch India — Air Quality Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+<style>
+/* ═══════════════════════════════════════════════════════════
+   1. DESIGN TOKENS  (CSS custom properties)
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  /* dark theme (default) */
+  --bg:          #0B1020;
+  --surface:     #131A2E;
+  --surface2:    #1A2340;
+  --border:      rgba(255,255,255,0.08);
+  --text:        #E8EAF0;
+  --text-muted:  #7B85A0;
+  --text-dim:    #4A536A;
+
+  --cyan:        #22D3EE;
+  --cyan-dim:    rgba(34,211,238,0.15);
+  --violet:      #8B5CF6;
+  --violet-dim:  rgba(139,92,246,0.15);
+
+  /* AQI category colours */
+  --aqi-good:        #22C55E;
+  --aqi-satisfactory:#84CC16;
+  --aqi-moderate:    #EAB308;
+  --aqi-poor:        #F97316;
+  --aqi-verypoor:    #EF4444;
+  --aqi-severe:      #9F1239;
+  --aqi-severeplus:  #6B0F1A;
+
+  --radius-sm:   8px;
+  --radius:      16px;
+  --radius-lg:   24px;
+  --shadow:      0 4px 24px rgba(0,0,0,0.4);
+  --shadow-hover:0 8px 32px rgba(0,0,0,0.6);
+  --transition:  200ms ease;
+
+  --sidebar-w:   240px;
+  --topbar-h:    60px;
+}
+
+[data-theme="light"] {
+  --bg:         #F0F4FA;
+  --surface:    #FFFFFF;
+  --surface2:   #EBF0FB;
+  --border:     rgba(0,0,0,0.08);
+  --text:       #111827;
+  --text-muted: #6B7280;
+  --text-dim:   #9CA3AF;
+  --shadow:     0 4px 24px rgba(0,0,0,0.08);
+  --shadow-hover:0 8px 32px rgba(0,0,0,0.14);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   2. RESET & BASE
+   ═══════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+  transition: background var(--transition), color var(--transition);
+}
+a { color: var(--cyan); text-decoration: none; }
+button { cursor: pointer; font-family: inherit; }
+canvas { display: block; }
+img, svg { display: block; }
+
+/* ═══════════════════════════════════════════════════════════
+   3. LAYOUT  (sidebar + main)
+   ═══════════════════════════════════════════════════════════ */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  z-index: 200;
+  transition: transform var(--transition), width var(--transition);
+  overflow-y: auto;
+}
+.sidebar.collapsed { transform: translateX(-100%); }
+
+.sidebar-logo {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-logo .logo-mark {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 800; font-size: 1.1rem; letter-spacing: -0.3px;
+}
+.logo-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--cyan), var(--violet));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0;
+}
+.logo-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* City selector in sidebar */
+.sidebar-city {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-city label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; display: block; margin-bottom: 6px; }
+.city-search-wrap { position: relative; }
+.city-search-wrap input {
+  width: 100%; padding: 8px 12px 8px 32px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 13px;
+  outline: none; transition: border-color var(--transition);
+}
+.city-search-wrap input:focus { border-color: var(--cyan); }
+.city-search-wrap .search-icon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--text-muted); font-size: 13px; pointer-events: none;
+}
+.city-dropdown {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); margin-top: 4px;
+  max-height: 200px; overflow-y: auto;
+  display: none;
+}
+.city-dropdown.open { display: block; }
+.city-dropdown li {
+  list-style: none; padding: 8px 12px; cursor: pointer;
+  font-size: 13px; transition: background var(--transition);
+}
+.city-dropdown li:hover, .city-dropdown li.selected { background: var(--cyan-dim); color: var(--cyan); }
+
+/* Sidebar nav */
+.sidebar-nav { padding: 12px 8px; flex: 1; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 500; color: var(--text-muted);
+  cursor: pointer; transition: all var(--transition);
+  border: none; background: none; width: 100%; text-align: left;
+}
+.nav-item .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+.nav-item:hover { background: var(--surface2); color: var(--text); }
+.nav-item.active { background: var(--cyan-dim); color: var(--cyan); font-weight: 600; }
+
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-dim); line-height: 1.5;
+}
+
+/* ── Main area ── */
+.main-area {
+  margin-left: var(--sidebar-w);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  transition: margin-left var(--transition);
+}
+.main-area.sidebar-collapsed { margin-left: 0; }
+
+/* ── Top bar ── */
+.topbar {
+  height: var(--topbar-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 24px; gap: 16px;
+  position: sticky; top: 0; z-index: 100;
+}
+.topbar-toggle {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 18px; padding: 6px; border-radius: 6px;
+  transition: all var(--transition);
+}
+.topbar-toggle:hover { background: var(--surface2); color: var(--text); }
+.topbar-title { font-size: 1rem; font-weight: 700; flex: 1; }
+.topbar-meta { font-size: 12px; color: var(--text-muted); }
+.theme-toggle {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 5px 14px; font-size: 13px;
+  color: var(--text); transition: all var(--transition);
+  display: flex; align-items: center; gap: 6px;
+}
+.theme-toggle:hover { border-color: var(--cyan); color: var(--cyan); }
+
+/* ── Content ── */
+.content { padding: 24px; flex: 1; }
+.page { display: none; animation: fadeIn 300ms ease; }
+.page.active { display: block; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ═══════════════════════════════════════════════════════════
+   4. CARDS
+   ═══════════════════════════════════════════════════════════ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+.card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); }
+.card-title {
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 12px;
+}
+.card-value { font-size: 2rem; font-weight: 800; line-height: 1; }
+.card-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* Stat card grid */
+.stat-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-top: 16px; }
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px; box-shadow: var(--shadow);
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+.stat-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); }
+.stat-icon { font-size: 20px; margin-bottom: 8px; }
+.stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-muted); }
+.stat-val { font-size: 1.4rem; font-weight: 800; margin: 4px 0 2px; }
+.stat-desc { font-size: 12px; color: var(--text-muted); }
+
+/* Hero card */
+.hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.hero-card {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; min-height: 280px;
+}
+.hero-card .city-name { font-size: 1rem; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
+.aqi-note { font-size: 13px; color: var(--text-muted); margin-top: 12px; max-width: 260px; }
+
+/* ═══════════════════════════════════════════════════════════
+   5. AQI COLOURS
+   ═══════════════════════════════════════════════════════════ */
+.aqi-good        { color: var(--aqi-good); }
+.aqi-satisfactory{ color: var(--aqi-satisfactory); }
+.aqi-moderate    { color: var(--aqi-moderate); }
+.aqi-poor        { color: var(--aqi-poor); }
+.aqi-verypoor    { color: var(--aqi-verypoor); }
+.aqi-severe      { color: var(--aqi-severe); }
+.aqi-severeplus  { color: var(--aqi-severeplus); }
+
+.aqi-badge {
+  display: inline-block; padding: 3px 10px;
+  border-radius: 20px; font-size: 12px; font-weight: 600;
+  background: rgba(255,255,255,0.08);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   6. GAUGE  (SVG)
+   ═══════════════════════════════════════════════════════════ */
+.gauge-wrap { position: relative; width: 200px; height: 120px; margin: 0 auto; }
+.gauge-wrap svg { overflow: visible; }
+.gauge-value {
+  position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+  text-align: center;
+}
+.gauge-value .g-num { font-size: 2.4rem; font-weight: 800; line-height: 1; }
+.gauge-value .g-cat { font-size: 13px; font-weight: 600; margin-top: 2px; }
+
+/* ═══════════════════════════════════════════════════════════
+   7. CHART CONTAINERS
+   ═══════════════════════════════════════════════════════════ */
+.chart-wrap { position: relative; }
+.chart-wrap canvas { max-height: 320px; }
+.chart-wrap.tall canvas { max-height: 420px; }
+
+.section-grid { display: grid; gap: 16px; }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+
+/* ═══════════════════════════════════════════════════════════
+   8. HEATMAP
+   ═══════════════════════════════════════════════════════════ */
+.heatmap-outer { overflow-x: auto; }
+.heatmap-grid {
+  display: grid;
+  gap: 3px;
+  min-width: 600px;
+}
+.heatmap-cell {
+  width: 100%; aspect-ratio: 1;
+  border-radius: 3px;
+  cursor: default;
+  transition: transform 100ms;
+}
+.heatmap-cell:hover { transform: scale(1.3); z-index: 10; position: relative; }
+.heatmap-month-labels { display: flex; gap: 3px; font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+.heatmap-day-labels { display: flex; flex-direction: column; justify-content: space-around; font-size: 10px; color: var(--text-muted); padding-right: 4px; }
+
+/* ═══════════════════════════════════════════════════════════
+   9. FORECAST CARDS
+   ═══════════════════════════════════════════════════════════ */
+.fc-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-top: 16px; }
+.fc-card {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 10px; text-align: center;
+  transition: all var(--transition);
+}
+.fc-card:hover { border-color: var(--cyan); transform: translateY(-3px); }
+.fc-day { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.fc-date { font-size: 11px; color: var(--text-dim); margin-bottom: 8px; }
+.fc-aqi { font-size: 1.5rem; font-weight: 800; line-height: 1; }
+.fc-range { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+
+/* ═══════════════════════════════════════════════════════════
+   10. FEATURE IMPORTANCE BARS
+   ═══════════════════════════════════════════════════════════ */
+.fi-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.fi-label { width: 80px; font-size: 12px; color: var(--text-muted); text-align: right; flex-shrink: 0; }
+.fi-bar-bg { flex: 1; background: var(--surface2); border-radius: 4px; height: 12px; overflow: hidden; }
+.fi-bar-fill { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--violet)); border-radius: 4px; transition: width 600ms ease; }
+.fi-pct { width: 44px; font-size: 12px; font-weight: 600; }
+
+/* ═══════════════════════════════════════════════════════════
+   11. COMPARE
+   ═══════════════════════════════════════════════════════════ */
+.compare-pickers { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 20px; }
+.compare-pickers select {
+  padding: 9px 12px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 13px; outline: none;
+  transition: border-color var(--transition);
+}
+.compare-pickers select:focus { border-color: var(--cyan); }
+.btn-primary {
+  padding: 9px 20px; background: linear-gradient(135deg, var(--cyan), var(--violet));
+  border: none; border-radius: var(--radius-sm); color: #fff; font-size: 13px;
+  font-weight: 600; transition: opacity var(--transition);
+}
+.btn-primary:hover { opacity: 0.85; }
+
+/* Ranking table */
+.rank-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rank-table th { padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.rank-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.rank-table tr:last-child td { border-bottom: none; }
+.rank-table tr:hover td { background: var(--surface2); }
+
+/* ═══════════════════════════════════════════════════════════
+   12. SKELETON LOADERS
+   ═══════════════════════════════════════════════════════════ */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 6px;
+}
+.skel-line  { height: 14px; margin-bottom: 8px; }
+.skel-block { height: 200px; border-radius: var(--radius); margin-bottom: 16px; }
+.skel-circle{ width: 140px; height: 140px; border-radius: 50%; margin: 0 auto 16px; }
+
+/* ═══════════════════════════════════════════════════════════
+   13. ERROR STATE
+   ═══════════════════════════════════════════════════════════ */
+.error-box {
+  background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+  border-radius: var(--radius); padding: 20px; text-align: center; color: #FCA5A5;
+}
+.btn-retry {
+  margin-top: 10px; padding: 7px 16px; background: rgba(239,68,68,0.2);
+  border: 1px solid rgba(239,68,68,0.4); border-radius: var(--radius-sm);
+  color: #FCA5A5; font-size: 13px; transition: background var(--transition);
+}
+.btn-retry:hover { background: rgba(239,68,68,0.35); }
+
+/* ═══════════════════════════════════════════════════════════
+   14. SECTION HEADERS
+   ═══════════════════════════════════════════════════════════ */
+.section-header { margin-bottom: 20px; }
+.section-header h2 { font-size: 1.3rem; font-weight: 700; }
+.section-header p { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.divider { height: 1px; background: var(--border); margin: 28px 0; }
+
+/* Date range selector */
+.date-range-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.range-btn {
+  padding: 5px 12px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; font-size: 12px; color: var(--text-muted);
+  transition: all var(--transition);
+}
+.range-btn:hover, .range-btn.active { background: var(--cyan-dim); border-color: var(--cyan); color: var(--cyan); }
+
+/* About section */
+.about-card { max-width: 720px; }
+.about-card h3 { font-size: 1rem; font-weight: 700; margin: 18px 0 8px; }
+.about-card p  { font-size: 13px; color: var(--text-muted); line-height: 1.7; }
+.about-card ul { font-size: 13px; color: var(--text-muted); padding-left: 20px; line-height: 2; }
+.about-aqi-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.legend-dot  { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+/* ═══════════════════════════════════════════════════════════
+   15. FOOTER
+   ═══════════════════════════════════════════════════════════ */
+footer {
+  padding: 20px 24px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-dim); line-height: 1.6;
+  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   16. RESPONSIVE
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 1100px) {
+  .stat-grid  { grid-template-columns: repeat(2, 1fr); }
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .fc-grid    { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 768px) {
+  :root { --sidebar-w: 0px; }
+  .sidebar { transform: translateX(-100%); width: 240px; }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .main-area { margin-left: 0; }
+  .hero-grid { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+  .fc-grid   { grid-template-columns: repeat(3, 1fr); }
+  .content   { padding: 16px; }
+}
+@media (max-width: 480px) {
+  .stat-grid { grid-template-columns: 1fr; }
+  .fc-grid   { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Mobile overlay */
+.sidebar-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5); z-index: 199;
+}
+.sidebar-overlay.active { display: block; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════ HTML MARKUP ═══════════════════════════════ -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="app-shell">
+
+  <!-- ── SIDEBAR ─────────────────────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar" aria-label="Navigation">
+    <div class="sidebar-logo">
+      <div class="logo-mark">
+        <div class="logo-icon" aria-hidden="true">🌿</div>
+        <div>
+          <div>AirWatch</div>
+          <div class="logo-sub">India Air Quality</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-city">
+      <label for="citySearchInput">City</label>
+      <div class="city-search-wrap">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="citySearchInput" type="text" placeholder="Search city…"
+               autocomplete="off" aria-label="Search city" aria-expanded="false"
+               aria-controls="cityList"/>
+      </div>
+      <ul class="city-dropdown" id="cityList" role="listbox" aria-label="City list"></ul>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Dashboard sections">
+      <button class="nav-item active" data-page="overview"   aria-current="page">
+        <span class="nav-icon" aria-hidden="true">📊</span> Overview
+      </button>
+      <button class="nav-item" data-page="trends">
+        <span class="nav-icon" aria-hidden="true">📈</span> Trends
+      </button>
+      <button class="nav-item" data-page="forecast">
+        <span class="nav-icon" aria-hidden="true">🔮</span> Forecast
+      </button>
+      <button class="nav-item" data-page="compare">
+        <span class="nav-icon" aria-hidden="true">⚖️</span> Compare Cities
+      </button>
+      <button class="nav-item" data-page="about">
+        <span class="nav-icon" aria-hidden="true">ℹ️</span> About
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      Data: Kaggle — India Air Quality<br/>
+      2015–2020 · 26 cities
+    </div>
+  </aside>
+
+  <!-- ── MAIN ──────────────────────────────────────────────────────────────── -->
+  <div class="main-area" id="mainArea">
+
+    <!-- Top bar -->
+    <div class="topbar" role="banner">
+      <button class="topbar-toggle" id="sidebarToggle"
+              onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+      <span class="topbar-title" id="topbarTitle">Overview</span>
+      <span class="topbar-meta" id="topbarMeta">Select a city to begin</span>
+      <button class="theme-toggle" id="themeBtn"
+              onclick="toggleTheme()" aria-label="Toggle colour theme">
+        <span id="themeIcon">☀️</span>
+        <span id="themeLabel">Light</span>
+      </button>
+    </div>
+
+    <!-- ── CONTENT ── -->
+    <div class="content">
+
+      <!-- ======================================================
+           PAGE: OVERVIEW
+           ====================================================== -->
+      <section class="page active" id="page-overview" aria-label="Overview">
+        <div class="section-header">
+          <h2>City Overview</h2>
+          <p id="overviewSubtitle">Select a city in the sidebar to load data.</p>
+        </div>
+
+        <!-- Hero row: gauge + stat cards -->
+        <div class="hero-grid" id="heroGrid">
+          <!-- Gauge card -->
+          <div class="hero-card" id="gaugeCard">
+            <div class="city-name" id="gaugeCityName">—</div>
+            <div class="gauge-wrap" id="gaugeWrap">
+              <svg width="200" height="110" viewBox="0 0 200 110" aria-hidden="true">
+                <path id="gaugeTrack"  d="" stroke-width="16" stroke-linecap="round" fill="none"/>
+                <path id="gaugeFill"   d="" stroke-width="16" stroke-linecap="round" fill="none"/>
+              </svg>
+              <div class="gauge-value">
+                <div class="g-num" id="gaugeNum">—</div>
+                <div class="g-cat" id="gaugeCat"></div>
+              </div>
+            </div>
+            <p class="aqi-note" id="aqiNote"></p>
+          </div>
+
+          <!-- Skeleton for stats while loading -->
+          <div id="statsSkeleton">
+            <div class="skeleton skel-block" style="height:120px;margin-bottom:16px;"></div>
+          </div>
+        </div>
+
+        <div class="stat-grid" id="statGrid" style="display:none;">
+          <div class="stat-card">
+            <div class="stat-icon">📅</div>
+            <div class="stat-label">Best Month</div>
+            <div class="stat-val" id="statBestMonth">—</div>
+            <div class="stat-desc" id="statBestMonthAqi"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🌫️</div>
+            <div class="stat-label">Worst Month</div>
+            <div class="stat-val" id="statWorstMonth">—</div>
+            <div class="stat-desc" id="statWorstMonthAqi"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🔬</div>
+            <div class="stat-label">Top Pollutant</div>
+            <div class="stat-val" id="statTopPollutant">—</div>
+            <div class="stat-desc" id="statPollutantCorr"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">📉</div>
+            <div class="stat-label">Yearly Change</div>
+            <div class="stat-val" id="statYearlyChange">—</div>
+            <div class="stat-desc" id="statYearlyDesc"></div>
+          </div>
+        </div>
+
+        <!-- Error box for overview — sits outside the gauge so errors never destroy the SVG -->
+        <div id="overviewError" style="display:none;margin-top:16px;"></div>
+
+        <!-- Category breakdown -->
+        <div class="divider"></div>
+        <div class="card" id="catBreakdownCard" style="display:none;">
+          <div class="card-title">Days by AQI Category</div>
+          <div class="chart-wrap">
+            <canvas id="catChart" aria-label="AQI category breakdown chart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================================================
+           PAGE: TRENDS
+           ====================================================== -->
+      <section class="page" id="page-trends" aria-label="Trends">
+        <div class="section-header">
+          <h2>Air Quality Trends</h2>
+          <p>Historical patterns — select a city first.</p>
+        </div>
+
+        <!-- AQI history line chart -->
+        <div class="card">
+          <div class="card-title">Daily AQI History</div>
+          <div class="date-range-btns" role="group" aria-label="Date range">
+            <button class="range-btn active" data-range="all"  onclick="setRange(this,'all')">All</button>
+            <button class="range-btn"        data-range="365"  onclick="setRange(this,365)">1 Year</button>
+            <button class="range-btn"        data-range="180"  onclick="setRange(this,180)">6 Months</button>
+            <button class="range-btn"        data-range="90"   onclick="setRange(this,90)">3 Months</button>
+          </div>
+          <div class="chart-wrap tall" id="historyChartWrap">
+            <div class="skeleton skel-block" id="historySkel"></div>
+            <canvas id="historyChart" style="display:none;" aria-label="Daily AQI history"></canvas>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Seasonal + Pollutant side by side -->
+        <div class="section-grid grid-2">
+          <div class="card">
+            <div class="card-title">Seasonal AQI Pattern</div>
+            <div class="chart-wrap" id="seasonalWrap">
+              <div class="skeleton skel-block" id="seasonalSkel"></div>
+              <canvas id="seasonalChart" style="display:none;" aria-label="Seasonal AQI chart"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Pollutant Correlation with AQI</div>
+            <div class="chart-wrap" id="pollutantWrap">
+              <div class="skeleton skel-block" id="pollutantSkel"></div>
+              <canvas id="pollutantChart" style="display:none;" aria-label="Pollutant correlation chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Daily heatmap -->
+        <div class="card">
+          <div class="card-title">Daily AQI Heatmap</div>
+          <div id="heatmapWrap">
+            <div class="skeleton skel-block" id="heatmapSkel" style="height:120px;"></div>
+            <div id="heatmapContent" style="display:none;">
+              <div class="heatmap-outer">
+                <div id="heatmapGrid" class="heatmap-grid"></div>
+              </div>
+              <div style="margin-top:10px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--text-muted);">
+                <span>Lower AQI</span>
+                <span style="display:flex;gap:3px;">
+                  <span style="width:12px;height:12px;border-radius:2px;background:var(--aqi-good);display:inline-block;"></span>
+                  <span style="width:12px;height:12px;border-radius:2px;background:var(--aqi-satisfactory);display:inline-block;"></span>
+                  <span style="width:12px;height:12px;border-radius:2px;background:var(--aqi-moderate);display:inline-block;"></span>
+                  <span style="width:12px;height:12px;border-radius:2px;background:var(--aqi-poor);display:inline-block;"></span>
+                  <span style="width:12px;height:12px;border-radius:2px;background:var(--aqi-verypoor);display:inline-block;"></span>
+                  <span style="width:12px;height:12px;border-radius:2px;background:var(--aqi-severe);display:inline-block;"></span>
+                </span>
+                <span>Higher AQI</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================================================
+           PAGE: FORECAST
+           ====================================================== -->
+      <section class="page" id="page-forecast" aria-label="Forecast">
+        <div class="section-header">
+          <h2>7-Day AQI Forecast</h2>
+          <p>Machine learning prediction with 95% confidence range.</p>
+        </div>
+
+        <!-- Forecast chart -->
+        <div class="card">
+          <div class="card-title">Predicted AQI with Confidence Band</div>
+          <div class="chart-wrap" id="forecastChartWrap">
+            <div class="skeleton skel-block" id="forecastSkel"></div>
+            <canvas id="forecastChart" style="display:none;" aria-label="7-day AQI forecast chart"></canvas>
+          </div>
+        </div>
+
+        <!-- 7 day cards -->
+        <div class="fc-grid" id="fcGrid"></div>
+
+        <div class="divider"></div>
+
+        <!-- Model info + feature importance -->
+        <div class="section-grid grid-2">
+          <div class="card" id="modelInfoCard">
+            <div class="card-title">Model Performance</div>
+            <div id="modelInfoContent">
+              <div class="skeleton skel-line" style="width:70%;"></div>
+              <div class="skeleton skel-line" style="width:50%;"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Feature Importance</div>
+            <div id="featureImportanceWrap">
+              <div class="skeleton skel-block" style="height:160px;" id="fiSkel"></div>
+              <div id="fiContent" style="display:none;"></div>
+            </div>
+            <p id="fiNote" style="font-size:12px;color:var(--text-muted);margin-top:12px;line-height:1.6;"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================================================
+           PAGE: COMPARE
+           ====================================================== -->
+      <section class="page" id="page-compare" aria-label="Compare Cities">
+        <div class="section-header">
+          <h2>Compare Cities</h2>
+          <p>Pick 2–3 cities to compare their air quality side by side.</p>
+        </div>
+
+        <div class="compare-pickers">
+          <div>
+            <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.7px;">City 1</div>
+            <select id="cmp1" aria-label="Compare city 1"><option value="">— select —</option></select>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.7px;">City 2</div>
+            <select id="cmp2" aria-label="Compare city 2"><option value="">— select —</option></select>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.7px;">City 3 (optional)</div>
+            <select id="cmp3" aria-label="Compare city 3 (optional)"><option value="">— none —</option></select>
+          </div>
+          <button class="btn-primary" onclick="runCompare()" style="align-self:flex-end;">Compare</button>
+        </div>
+
+        <div id="compareResults" style="display:none;">
+          <!-- Avg AQI bar chart -->
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-title">Average AQI Comparison</div>
+            <div class="chart-wrap">
+              <canvas id="compareChart" aria-label="City AQI comparison chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Ranking table -->
+          <div class="card">
+            <div class="card-title">Ranking Table</div>
+            <table class="rank-table" id="compareTable" aria-label="City comparison ranking table">
+              <thead>
+                <tr>
+                  <th>#</th><th>City</th><th>Avg AQI</th>
+                  <th>Min AQI</th><th>Max AQI</th>
+                  <th>Bad Air Days %</th><th>Total Days</th>
+                </tr>
+              </thead>
+              <tbody id="compareTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="compareError" style="display:none;"></div>
+      </section>
+
+      <!-- ======================================================
+           PAGE: ABOUT
+           ====================================================== -->
+      <section class="page" id="page-about" aria-label="About">
+        <div class="section-header">
+          <h2>About AirWatch India</h2>
+        </div>
+        <div class="card about-card">
+          <h3>What is this?</h3>
+          <p>AirWatch India is an educational data science project that analyses daily air quality measurements from 26 Indian cities between 2015 and 2020. It uses Python, pandas, scikit-learn, SQLite, and Flask on the backend, with plain HTML/CSS/JavaScript on the frontend.</p>
+
+          <h3>AQI Scale (India CPCB)</h3>
+          <div class="about-aqi-legend">
+            <div class="legend-item"><div class="legend-dot" style="background:var(--aqi-good)"></div>0–50 Good</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--aqi-satisfactory)"></div>51–100 Satisfactory</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--aqi-moderate)"></div>101–200 Moderate</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--aqi-poor)"></div>201–300 Poor</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--aqi-verypoor)"></div>301–400 Very Poor</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--aqi-severe)"></div>401–500 Severe</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--aqi-severeplus)"></div>&gt;500 Severe+</div>
+          </div>
+
+          <h3>Data Source</h3>
+          <p>Dataset: <a href="https://www.kaggle.com/datasets/rohanrao/air-quality-data-in-india" target="_blank" rel="noopener">Air Quality Data in India — Kaggle</a></p>
+
+          <h3>Tech Stack</h3>
+          <ul>
+            <li>Python 3.13 · Flask 3.1 · pandas 2.3 · scikit-learn 1.7</li>
+            <li>SQLite (no server needed)</li>
+            <li>Chart.js 4.4 · Inter font · plain HTML + CSS</li>
+          </ul>
+
+          <h3>Disclaimer</h3>
+          <p><strong>Educational project only — not medical or official advice.</strong> Do not use this dashboard to make health or policy decisions. Always refer to official CPCB or government sources for authoritative air quality information.</p>
+        </div>
+      </section>
+
+    </div><!-- /content -->
+
+    <footer role="contentinfo">
+      <span>Data source: <a href="https://www.kaggle.com/datasets/rohanrao/air-quality-data-in-india" target="_blank" rel="noopener">Kaggle — India Air Quality</a> · 2015–2020</span>
+      <span>Educational project — not medical or official advice. Made with IBM Bob.</span>
+    </footer>
+
+  </div><!-- /main-area -->
+</div><!-- /app-shell -->
+
+<!-- ═══════════════════════════════ JAVASCRIPT ═══════════════════════════════ -->
+<script>
+'use strict';
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 1: UTILITIES
+   ───────────────────────────────────────────────────────────────── */
+
+// Return the AQI colour variable name for a given AQI number
+function aqiColor(aqi) {
+  if (aqi <= 50)  return '#22C55E';
+  if (aqi <= 100) return '#84CC16';
+  if (aqi <= 200) return '#EAB308';
+  if (aqi <= 300) return '#F97316';
+  if (aqi <= 400) return '#EF4444';
+  if (aqi <= 500) return '#9F1239';
+  return '#6B0F1A';
+}
+
+// Return the category name for a given AQI number
+function aqiCat(aqi) {
+  if (aqi <= 50)  return 'Good';
+  if (aqi <= 100) return 'Satisfactory';
+  if (aqi <= 200) return 'Moderate';
+  if (aqi <= 300) return 'Poor';
+  if (aqi <= 400) return 'Very Poor';
+  if (aqi <= 500) return 'Severe';
+  return 'Severe+';
+}
+
+// One-line note shown under the gauge
+function aqiNote(cat) {
+  return {
+    'Good':         'Air quality is healthy — enjoy outdoor activities.',
+    'Satisfactory': 'Air quality is acceptable for most people.',
+    'Moderate':     'Sensitive groups should limit prolonged outdoor exertion.',
+    'Poor':         'Everyone may experience health effects — reduce outdoor time.',
+    'Very Poor':    'Serious health effects — avoid prolonged outdoor activity.',
+    'Severe':       'Health emergency — stay indoors, keep windows closed.',
+    'Severe+':      'Extreme pollution event — do not go outside.',
+  }[cat] || '';
+}
+
+// CSS variable value for current theme
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// Count-up animation for a single element
+function countUp(el, target, duration = 800) {
+  const start = performance.now();
+  const from  = 0;
+  function step(now) {
+    const t   = Math.min((now - start) / duration, 1);
+    const val = Math.round(from + (target - from) * t);
+    el.textContent = val;
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// Render an error box inside a container element
+function showError(containerId, message, retryFn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = `
+    <div class="error-box" role="alert">
+      <div>⚠️ ${message}</div>
+      ${retryFn ? `<button class="btn-retry" onclick="(${retryFn.toString()})()">Retry</button>` : ''}
+    </div>`;
+  el.style.display = 'block';
+}
+
+// Destroy a Chart.js instance stored on a canvas element
+function destroyChart(canvasId) {
+  const c = Chart.getChart(canvasId);
+  if (c) c.destroy();
+}
+
+// Common Chart.js defaults (dark-aware)
+function chartDefaults() {
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  return {
+    gridColor:  isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+    textColor:  isDark ? '#7B85A0' : '#6B7280',
+    fontFamily: "'Inter', sans-serif",
+  };
+}
+
+// Create a canvas gradient (top-to-bottom colour fade)
+function makeGradient(ctx, colorHex, alpha1 = 0.4, alpha2 = 0.0) {
+  const g = ctx.createLinearGradient(0, 0, 0, ctx.canvas.clientHeight || 300);
+  g.addColorStop(0, colorHex + Math.round(alpha1 * 255).toString(16).padStart(2,'0'));
+  g.addColorStop(1, colorHex + Math.round(alpha2 * 255).toString(16).padStart(2,'0'));
+  return g;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 2: API  (thin wrappers around fetch)
+   ───────────────────────────────────────────────────────────────── */
+const API = {
+  async get(path) {
+    const res = await fetch(path);
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+    return json;
+  },
+  cities:    ()     => API.get('/api/cities'),
+  summary:   (city) => API.get(`/api/summary?city=${encodeURIComponent(city)}`),
+  trend:     (city) => API.get(`/api/trend?city=${encodeURIComponent(city)}`),
+  seasonal:  (city) => API.get(`/api/seasonal?city=${encodeURIComponent(city)}`),
+  pollutants:(city) => API.get(`/api/pollutants?city=${encodeURIComponent(city)}`),
+  daily:     (city) => API.get(`/api/daily?city=${encodeURIComponent(city)}`),
+  forecast:  (city) => API.get(`/api/forecast?city=${encodeURIComponent(city)}`),
+  featureImp:(city) => API.get(`/api/feature-importance?city=${encodeURIComponent(city)}`),
+  compare:   (cs)   => API.get(`/api/compare?cities=${encodeURIComponent(cs)}`),
+};
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 3: THEME
+   ───────────────────────────────────────────────────────────────── */
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('aw-theme', theme);
+  const isDark = theme === 'dark';
+  document.getElementById('themeIcon').textContent  = isDark ? '☀️' : '🌙';
+  document.getElementById('themeLabel').textContent = isDark ? 'Light' : 'Dark';
+}
+
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+  // Redraw charts with new colours
+  if (STATE.city) redrawAllCharts();
+}
+
+// Load saved preference on startup
+applyTheme(localStorage.getItem('aw-theme') || 'dark');
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 4: SIDEBAR & NAV
+   ───────────────────────────────────────────────────────────────── */
+let sidebarOpen = true;
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const main    = document.getElementById('mainArea');
+  const overlay = document.getElementById('sidebarOverlay');
+  const isMobile = window.innerWidth <= 768;
+
+  if (isMobile) {
+    const open = sidebar.classList.toggle('mobile-open');
+    overlay.classList.toggle('active', open);
+  } else {
+    sidebarOpen = !sidebarOpen;
+    sidebar.classList.toggle('collapsed', !sidebarOpen);
+    main.classList.toggle('sidebar-collapsed', !sidebarOpen);
+  }
+}
+
+// Navigation between pages
+const PAGE_TITLES = {
+  overview: 'Overview', trends: 'Trends',
+  forecast: 'Forecast', compare: 'Compare Cities', about: 'About',
+};
+
+function navigateTo(pageId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.toggle('active', n.dataset.page === pageId);
+    n.setAttribute('aria-current', n.dataset.page === pageId ? 'page' : 'false');
+  });
+  const el = document.getElementById('page-' + pageId);
+  if (el) el.classList.add('active');
+  document.getElementById('topbarTitle').textContent = PAGE_TITLES[pageId] || pageId;
+
+  // Lazy-load section data when user first visits
+  if (STATE.city) loadSectionData(pageId);
+}
+
+// Attach nav click handlers
+document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => {
+    navigateTo(btn.dataset.page);
+    if (window.innerWidth <= 768) {
+      document.getElementById('sidebar').classList.remove('mobile-open');
+      document.getElementById('sidebarOverlay').classList.remove('active');
+    }
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 5: CITY PICKER
+   ───────────────────────────────────────────────────────────────── */
+let ALL_CITIES = [];
+
+const STATE = {
+  city:         null,
+  dailyData:    null,   // cached full daily data for history chart + heatmap
+  rangeLimit:   'all',  // current date-range filter
+};
+
+async function initCities() {
+  try {
+    const data = await API.cities();
+    ALL_CITIES = data.cities;
+    renderCityList(ALL_CITIES);
+    populateCompareSelects(ALL_CITIES);
+  } catch (e) {
+    console.error('Could not load cities:', e);
+  }
+}
+
+function renderCityList(cities) {
+  const ul = document.getElementById('cityList');
+  ul.innerHTML = cities.map(c =>
+    `<li role="option" aria-selected="false" onclick="selectCity('${c}')">${c}</li>`
+  ).join('');
+}
+
+function populateCompareSelects(cities) {
+  ['cmp1','cmp2','cmp3'].forEach((id, i) => {
+    const sel = document.getElementById(id);
+    const placeholder = i === 2 ? '<option value="">— none —</option>' : '<option value="">— select —</option>';
+    sel.innerHTML = placeholder + cities.map(c =>
+      `<option value="${c}">${c}</option>`
+    ).join('');
+  });
+}
+
+// City search filtering
+document.getElementById('citySearchInput').addEventListener('input', function() {
+  const q    = this.value.toLowerCase();
+  const list = document.getElementById('cityList');
+  list.classList.add('open');
+  const filtered = ALL_CITIES.filter(c => c.toLowerCase().includes(q));
+  renderCityList(filtered.length ? filtered : ALL_CITIES);
+  list.querySelectorAll('li').forEach(li => {
+    li.onclick = () => selectCity(li.textContent);
+  });
+});
+
+document.getElementById('citySearchInput').addEventListener('focus', () => {
+  document.getElementById('cityList').classList.add('open');
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.sidebar-city')) {
+    document.getElementById('cityList').classList.remove('open');
+  }
+});
+
+function selectCity(city) {
+  STATE.city      = city;
+  STATE.dailyData = null; // clear cache
+  document.getElementById('citySearchInput').value = city;
+  document.getElementById('cityList').classList.remove('open');
+  // Mark selected
+  document.querySelectorAll('#cityList li').forEach(li => {
+    li.classList.toggle('selected', li.textContent === city);
+    li.setAttribute('aria-selected', li.textContent === city);
+  });
+  document.getElementById('topbarMeta').textContent = `City: ${city}`;
+  // Load whatever page is currently active
+  const activePage = document.querySelector('.nav-item.active')?.dataset.page || 'overview';
+  loadSectionData(activePage);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 6: SECTION LOADER  (dispatch to the right load function)
+   ───────────────────────────────────────────────────────────────── */
+function loadSectionData(pageId) {
+  switch (pageId) {
+    case 'overview': loadOverview();  break;
+    case 'trends':   loadTrends();    break;
+    case 'forecast': loadForecast();  break;
+    case 'compare':  /* triggered by button */ break;
+    default: break;
+  }
+}
+
+function redrawAllCharts() {
+  const active = document.querySelector('.nav-item.active')?.dataset.page;
+  if (active && STATE.city) loadSectionData(active);
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 7: OVERVIEW
+   ───────────────────────────────────────────────────────────────── */
+async function loadOverview() {
+  if (!STATE.city) return;
+  // Hide any previous error
+  const errBox = document.getElementById('overviewError');
+  if (errBox) errBox.style.display = 'none';
+
+  try {
+    const [summary, seasonal, pollutants, trend] = await Promise.all([
+      API.summary(STATE.city),
+      API.seasonal(STATE.city),
+      API.pollutants(STATE.city),
+      API.trend(STATE.city),
+    ]);
+
+    // Draw gauge — uses safe element references
+    drawGauge(summary.avg_aqi);
+
+    // Safe helper: set textContent only when the element exists
+    function setText(id, val) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    }
+
+    setText('gaugeCityName', summary.city);
+    setText('overviewSubtitle',
+      `Showing data for ${summary.city} · ${summary.total_days} days`);
+
+    // Stat cards
+    const monthly = seasonal.monthly;
+    const bestM   = monthly.reduce((a, b) => a.avg_aqi < b.avg_aqi ? a : b);
+    const worstM  = monthly.reduce((a, b) => a.avg_aqi > b.avg_aqi ? a : b);
+    setText('statBestMonth',     bestM.month_name);
+    setText('statBestMonthAqi',  `Avg AQI ${bestM.avg_aqi}`);
+    setText('statWorstMonth',    worstM.month_name);
+    setText('statWorstMonthAqi', `Avg AQI ${worstM.avg_aqi}`);
+
+    const topP = pollutants.pollutants[0];
+    setText('statTopPollutant', topP.name);
+    setText('statPollutantCorr', `r = ${topP.correlation_with_aqi}`);
+
+    const trendRows = trend.trend;
+    if (trendRows.length >= 2) {
+      const delta = (trendRows.at(-1).avg_aqi - trendRows[0].avg_aqi).toFixed(1);
+      const sign  = delta < 0 ? '↓' : '↑';
+      setText('statYearlyChange', `${sign} ${Math.abs(delta)}`);
+      setText('statYearlyDesc',
+        `${trendRows[0].year} → ${trendRows.at(-1).year}`);
+    }
+
+    const skelEl = document.getElementById('statsSkeleton');
+    if (skelEl) skelEl.style.display = 'none';
+    const gridEl = document.getElementById('statGrid');
+    if (gridEl) gridEl.style.display = 'grid';
+
+    // Category breakdown doughnut chart
+    drawCategoryChart(summary.category_counts);
+
+  } catch (e) {
+    // Write the error into the dedicated box — this never touches the gauge SVG
+    const errBox = document.getElementById('overviewError');
+    if (errBox) {
+      errBox.innerHTML = `
+        <div class="error-box" role="alert">
+          <div>⚠️ Could not load overview data: ${e.message}</div>
+          <button class="btn-retry" onclick="loadOverview()">Retry</button>
+        </div>`;
+      errBox.style.display = 'block';
+    }
+  }
+}
+
+function drawGauge(aqi) {
+  const num    = Math.round(aqi);
+  const cat    = aqiCat(num);
+  const color  = aqiColor(num);
+  const frac   = Math.min(num / 500, 1);
+
+  // SVG arc math: semicircle from 180° to 0°
+  const cx = 100, cy = 100, r = 80;
+  const startAngle = Math.PI;         // left end
+  const endAngle   = 0;               // right end
+  const fillEnd    = startAngle + frac * Math.PI;
+
+  function arc(a1, a2) {
+    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    const x2 = cx + r * Math.cos(a2), y2 = cy + r * Math.sin(a2);
+    const large = Math.abs(a2 - a1) > Math.PI ? 1 : 0;
+    return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
+  }
+
+  // Null-guard every getElementById so a missing element never throws
+  const trackEl = document.getElementById('gaugeTrack');
+  if (trackEl) {
+    trackEl.setAttribute('d', arc(Math.PI, 0));
+    trackEl.setAttribute('stroke', cssVar('--border') || 'rgba(255,255,255,0.08)');
+  }
+
+  const fillPath = document.getElementById('gaugeFill');
+  if (fillPath) {
+    fillPath.setAttribute('d', arc(Math.PI, fillEnd));
+    fillPath.setAttribute('stroke', color);
+  }
+
+  const numEl = document.getElementById('gaugeNum');
+  if (numEl) {
+    numEl.style.color = color;
+    countUp(numEl, num);
+  }
+
+  const catEl = document.getElementById('gaugeCat');
+  if (catEl) {
+    catEl.textContent = cat;
+    catEl.style.color = color;
+  }
+
+  const noteEl = document.getElementById('aqiNote');
+  if (noteEl) noteEl.textContent = aqiNote(cat);
+}
+
+function drawCategoryChart(counts) {
+  destroyChart('catChart');
+  const ORDER  = ['Good','Satisfactory','Moderate','Poor','Very Poor','Severe','Severe+'];
+  const COLORS = ['#22C55E','#84CC16','#EAB308','#F97316','#EF4444','#9F1239','#6B0F1A'];
+  const labels = ORDER.filter(k => counts[k]);
+  const values = labels.map(k => counts[k]);
+  const colors = labels.map(k => COLORS[ORDER.indexOf(k)]);
+
+  document.getElementById('catBreakdownCard').style.display = 'block';
+  const d = chartDefaults();
+  new Chart(document.getElementById('catChart'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2,
+      borderColor: cssVar('--surface') }] },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: { position: 'right', labels: { color: d.textColor, font: { family: d.fontFamily, size: 12 }, padding: 14 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw} days` } },
+      },
+    },
+  });
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 8: TRENDS
+   ───────────────────────────────────────────────────────────────── */
+async function loadTrends() {
+  if (!STATE.city) return;
+  try {
+    // Fetch all data in parallel
+    const [dailyData, seasonal, pollutants] = await Promise.all([
+      STATE.dailyData ? Promise.resolve(STATE.dailyData) : API.daily(STATE.city),
+      API.seasonal(STATE.city),
+      API.pollutants(STATE.city),
+    ]);
+    STATE.dailyData = dailyData;
+
+    drawHistoryChart(dailyData.data, STATE.rangeLimit);
+    drawSeasonalChart(seasonal);
+    drawPollutantChart(pollutants);
+    drawHeatmap(dailyData.data);
+  } catch (e) {
+    showError('historyChartWrap', 'Could not load trends: ' + e.message, loadTrends);
+  }
+}
+
+// Called by range buttons
+function setRange(btn, range) {
+  document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  STATE.rangeLimit = range;
+  if (STATE.dailyData) {
+    drawHistoryChart(STATE.dailyData.data, range);
+  }
+}
+
+function drawHistoryChart(data, range) {
+  destroyChart('historyChart');
+  document.getElementById('historySkel').style.display = 'none';
+  const canvas = document.getElementById('historyChart');
+  canvas.style.display = 'block';
+
+  // Slice by range
+  const slice = range === 'all' ? data : data.slice(-Number(range));
+  const labels = slice.map(d => d.date);
+  const values = slice.map(d => d.aqi);
+
+  const ctx = canvas.getContext('2d');
+  const grad = makeGradient(ctx, '#22D3EE', 0.35, 0.02);
+  const d    = chartDefaults();
+
+  new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets: [{
+      label: `${STATE.city} — Daily AQI`,
+      data: values, borderColor: '#22D3EE', backgroundColor: grad,
+      borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      animation: { duration: 400 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index', intersect: false,
+          callbacks: {
+            label: ctx => ` AQI ${ctx.raw}  (${aqiCat(ctx.raw)})`,
+            labelColor: ctx => ({ borderColor: aqiColor(ctx.raw), backgroundColor: aqiColor(ctx.raw) }),
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { maxTicksLimit: 10, color: d.textColor, font: { family: d.fontFamily, size: 10 } },
+             grid: { color: d.gridColor } },
+        y: { min: 0, ticks: { color: d.textColor, font: { family: d.fontFamily, size: 11 } },
+             grid: { color: d.gridColor } },
+      },
+    },
+  });
+}
+
+function drawSeasonalChart(seasonal) {
+  destroyChart('seasonalChart');
+  document.getElementById('seasonalSkel').style.display = 'none';
+  const canvas = document.getElementById('seasonalChart');
+  canvas.style.display = 'block';
+
+  const monthly = seasonal.monthly;
+  const labels  = monthly.map(m => m.month_name);
+  const values  = monthly.map(m => m.avg_aqi);
+  const colors  = values.map(v => aqiColor(v));
+  const d = chartDefaults();
+
+  new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets: [{
+      label: 'Avg AQI', data: values, backgroundColor: colors,
+      borderRadius: 6, borderSkipped: false,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.raw}  (${aqiCat(ctx.raw)})` } },
+      },
+      scales: {
+        x: { ticks: { color: d.textColor, font: { family: d.fontFamily, size: 11 } }, grid: { display: false } },
+        y: { min: 0, ticks: { color: d.textColor }, grid: { color: d.gridColor } },
+      },
+    },
+  });
+}
+
+function drawPollutantChart(pollutants) {
+  destroyChart('pollutantChart');
+  document.getElementById('pollutantSkel').style.display = 'none';
+  const canvas = document.getElementById('pollutantChart');
+  canvas.style.display = 'block';
+
+  const items  = pollutants.pollutants;
+  const labels = items.map(p => p.name);
+  const values = items.map(p => p.correlation_with_aqi);
+  const d = chartDefaults();
+
+  new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets: [{
+      label: 'Pearson r with AQI', data: values,
+      backgroundColor: values.map((_, i) => i === 0 ? '#22D3EE' : '#8B5CF6'),
+      borderRadius: 5, borderSkipped: false,
+    }]},
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` r = ${ctx.raw}` } },
+      },
+      scales: {
+        x: { min: 0, max: 1, ticks: { color: d.textColor }, grid: { color: d.gridColor } },
+        y: { ticks: { color: d.textColor, font: { family: d.fontFamily, size: 11 } }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+function drawHeatmap(data) {
+  document.getElementById('heatmapSkel').style.display = 'none';
+  const container = document.getElementById('heatmapContent');
+  container.style.display = 'block';
+  const grid = document.getElementById('heatmapGrid');
+  grid.innerHTML = '';
+
+  // Group by year → week columns
+  // Simple approach: lay all days out as columns of 7 rows (Mon–Sun)
+  if (!data.length) return;
+
+  const startDate = new Date(data[0].date);
+  // Find the Monday at or before startDate
+  const dow = (startDate.getDay() + 6) % 7; // 0=Mon
+  const cells = new Array(dow).fill(null).concat(data); // pad front
+
+  const totalCols = Math.ceil(cells.length / 7);
+  grid.style.gridTemplateColumns = `repeat(${totalCols}, 1fr)`;
+  grid.style.gridTemplateRows    = `repeat(7, 10px)`;
+
+  cells.forEach(d => {
+    const cell = document.createElement('div');
+    cell.className = 'heatmap-cell';
+    if (d) {
+      const bg = aqiColor(d.aqi);
+      cell.style.background = bg;
+      cell.title = `${d.date} — AQI ${d.aqi} (${d.category})`;
+      cell.setAttribute('aria-label', `${d.date} AQI ${d.aqi}`);
+    } else {
+      cell.style.background = 'transparent';
+    }
+    grid.appendChild(cell);
+  });
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 9: FORECAST
+   ───────────────────────────────────────────────────────────────── */
+async function loadForecast() {
+  if (!STATE.city) return;
+  try {
+    const [fc, fi] = await Promise.all([
+      API.forecast(STATE.city),
+      API.featureImp(STATE.city),
+    ]);
+
+    drawForecastChart(fc);
+    drawForecastCards(fc);
+    drawModelInfo(fc);
+    drawFeatureImportance(fi);
+  } catch (e) {
+    showError('forecastChartWrap', 'Could not load forecast: ' + e.message, loadForecast);
+  }
+}
+
+function drawForecastChart(fc) {
+  destroyChart('forecastChart');
+  document.getElementById('forecastSkel').style.display = 'none';
+  const canvas = document.getElementById('forecastChart');
+  canvas.style.display = 'block';
+
+  const rows   = fc.forecast;
+  const labels = rows.map(r => r.Date);
+  const preds  = rows.map(r => r.Forecast_AQI);
+  const lowers = rows.map(r => r.Lower_95);
+  const uppers = rows.map(r => r.Upper_95);
+  const d = chartDefaults();
+  const ctx = canvas.getContext('2d');
+
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        // Shaded confidence band — filled area between upper and lower
+        {
+          label: 'Upper 95%', data: uppers,
+          borderColor: 'transparent', backgroundColor: 'rgba(139,92,246,0.15)',
+          fill: '+1', pointRadius: 0, tension: 0.4,
+        },
+        {
+          label: 'Lower 95%', data: lowers,
+          borderColor: 'transparent', backgroundColor: 'rgba(139,92,246,0.15)',
+          fill: false, pointRadius: 0, tension: 0.4,
+        },
+        {
+          label: 'Forecast AQI', data: preds,
+          borderColor: '#22D3EE', backgroundColor: makeGradient(ctx, '#22D3EE', 0.25, 0),
+          borderWidth: 2.5, pointRadius: 5,
+          pointBackgroundColor: preds.map(v => aqiColor(v)),
+          fill: false, tension: 0.4,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: { display: true, labels: { color: d.textColor, font: { family: d.fontFamily, size: 12 } } },
+        tooltip: {
+          mode: 'index', intersect: false,
+          callbacks: {
+            label: ctx => {
+              if (ctx.datasetIndex === 2) return ` Forecast: ${ctx.raw}  (${aqiCat(ctx.raw)})`;
+              if (ctx.datasetIndex === 0) return ` Upper 95%: ${ctx.raw}`;
+              return ` Lower 95%: ${ctx.raw}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: d.textColor, font: { family: d.fontFamily, size: 11 } }, grid: { color: d.gridColor } },
+        y: { min: 0, ticks: { color: d.textColor }, grid: { color: d.gridColor } },
+      },
+    },
+  });
+}
+
+function drawForecastCards(fc) {
+  const grid = document.getElementById('fcGrid');
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  grid.innerHTML = fc.forecast.map(r => {
+    const dt  = new Date(r.Date);
+    const day = DAYS[dt.getUTCDay()];
+    const col = aqiColor(r.Forecast_AQI);
+    return `
+      <div class="fc-card">
+        <div class="fc-day">${day}</div>
+        <div class="fc-date">${r.Date.slice(5)}</div>
+        <div class="fc-aqi" style="color:${col}">${r.Forecast_AQI}</div>
+        <div class="fc-range" style="font-size:10px;">${aqiCat(r.Forecast_AQI)}</div>
+        <div class="fc-range">${r.Lower_95}–${r.Upper_95}</div>
+      </div>`;
+  }).join('');
+}
+
+function drawModelInfo(fc) {
+  document.getElementById('modelInfoContent').innerHTML = `
+    <div style="margin-bottom:8px;">
+      <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.7px;">Model</span><br/>
+      <span style="font-size:1rem;font-weight:700;">${fc.model_name}</span>
+    </div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);">Test MAE</div>
+        <div style="font-size:1.3rem;font-weight:700;color:var(--cyan);">${fc.test_mae}</div>
+        <div style="font-size:11px;color:var(--text-dim);">AQI points avg error</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);">Test RMSE</div>
+        <div style="font-size:1.3rem;font-weight:700;color:var(--violet);">${fc.test_rmse}</div>
+        <div style="font-size:11px;color:var(--text-dim);">Root mean sq. error</div>
+      </div>
+    </div>`;
+}
+
+function drawFeatureImportance(fi) {
+  document.getElementById('fiSkel').style.display = 'none';
+  const wrap = document.getElementById('fiContent');
+  wrap.style.display = 'block';
+  wrap.innerHTML = fi.features.map(f => `
+    <div class="fi-bar-row">
+      <div class="fi-label">${f.feature}</div>
+      <div class="fi-bar-bg">
+        <div class="fi-bar-fill" style="width:${f.importance_pct}%"></div>
+      </div>
+      <div class="fi-pct">${f.importance_pct}%</div>
+    </div>`).join('');
+
+  document.getElementById('fiNote').textContent = fi.plain_english;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 10: COMPARE
+   ───────────────────────────────────────────────────────────────── */
+async function runCompare() {
+  const c1 = document.getElementById('cmp1').value;
+  const c2 = document.getElementById('cmp2').value;
+  const c3 = document.getElementById('cmp3').value;
+
+  if (!c1 || !c2) {
+    document.getElementById('compareError').innerHTML =
+      `<div class="error-box">Please select at least 2 cities.</div>`;
+    document.getElementById('compareError').style.display = 'block';
+    document.getElementById('compareResults').style.display = 'none';
+    return;
+  }
+  document.getElementById('compareError').style.display = 'none';
+
+  const cityStr = [c1, c2, c3].filter(Boolean).join(',');
+  try {
+    const data = await API.compare(cityStr);
+    drawCompareChart(data.cities);
+    drawCompareTable(data.cities);
+    document.getElementById('compareResults').style.display = 'block';
+  } catch (e) {
+    document.getElementById('compareError').innerHTML =
+      `<div class="error-box">Compare failed: ${e.message}</div>`;
+    document.getElementById('compareError').style.display = 'block';
+  }
+}
+
+function drawCompareChart(cities) {
+  destroyChart('compareChart');
+  const labels = cities.map(c => c.city);
+  const avgs   = cities.map(c => c.avg_aqi);
+  const colors = avgs.map(v => aqiColor(v));
+  const d = chartDefaults();
+
+  new Chart(document.getElementById('compareChart'), {
+    type: 'bar',
+    data: { labels, datasets: [{
+      label: 'Average AQI', data: avgs, backgroundColor: colors,
+      borderRadius: 8, borderSkipped: false,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` Avg AQI: ${ctx.raw}  (${aqiCat(ctx.raw)})` } },
+      },
+      scales: {
+        x: { ticks: { color: d.textColor, font: { family: d.fontFamily, size: 12 } }, grid: { display: false } },
+        y: { min: 0, ticks: { color: d.textColor }, grid: { color: d.gridColor } },
+      },
+    },
+  });
+}
+
+function drawCompareTable(cities) {
+  const sorted = [...cities].sort((a, b) => b.avg_aqi - a.avg_aqi);
+  document.getElementById('compareTableBody').innerHTML = sorted.map((c, i) => `
+    <tr>
+      <td style="font-weight:700;">${i + 1}</td>
+      <td style="font-weight:600;">${c.city}</td>
+      <td style="color:${aqiColor(c.avg_aqi)};font-weight:700;">${c.avg_aqi}</td>
+      <td>${c.min_aqi}</td>
+      <td>${c.max_aqi}</td>
+      <td>${c.bad_air_pct}%</td>
+      <td>${c.total_days}</td>
+    </tr>`).join('');
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   MODULE 11: INIT
+   ───────────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', async () => {
+  await initCities();
+  // Auto-select Delhi on first load for a good demo experience
+  if (ALL_CITIES.includes('Delhi')) selectCity('Delhi');
+});
+</script>
+<!-- ═══════════ AirWatch Chatbot ═══════════ -->
+<style>
+#chatBtn{position:fixed;right:20px;bottom:20px;width:56px;height:56px;border-radius:50%;border:none;font-size:24px;color:#fff;background:linear-gradient(135deg,var(--cyan),var(--violet));box-shadow:var(--shadow-hover);z-index:300;cursor:pointer;transition:transform 200ms ease}
+#chatBtn:hover{transform:scale(1.08)}
+#chatPanel{position:fixed;right:20px;bottom:90px;width:min(370px,calc(100vw - 40px));height:min(520px,calc(100vh - 120px));background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-hover);display:none;flex-direction:column;overflow:hidden;z-index:300}
+#chatPanel.open{display:flex}
+.chat-head{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-weight:700}
+.chat-head button{background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer}
+#chatMsgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:85%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word}
+.msg.user{align-self:flex-end;background:linear-gradient(135deg,var(--cyan),var(--violet));color:#fff;border-bottom-right-radius:4px}
+.msg.bot{align-self:flex-start;background:var(--surface2);border:1px solid var(--border);border-bottom-left-radius:4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px}
+.chip{background:var(--cyan-dim);border:1px solid var(--cyan);color:var(--cyan);border-radius:20px;padding:4px 10px;font-size:12px;cursor:pointer}
+.chat-input{display:flex;gap:8px;padding:10px;border-top:1px solid var(--border)}
+.chat-input input{flex:1;padding:9px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;outline:none}
+.chat-input input:focus{border-color:var(--cyan)}
+.typing span{display:inline-block;width:6px;height:6px;margin:0 2px;border-radius:50%;background:var(--text-muted);animation:blink 1.2s infinite}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+</style>
+
+<button id="chatBtn" aria-label="Open chatbot">💬</button>
+<div id="chatPanel" role="dialog" aria-label="AirWatch chatbot">
+  <div class="chat-head"><span>AirWatch Assistant</span><button id="chatClose" aria-label="Close chat">✕</button></div>
+  <div id="chatMsgs"></div>
+  <div class="chips" id="chatChips"></div>
+  <div class="chat-input">
+    <input id="chatInput" type="text" placeholder="Ask about air quality…" autocomplete="off"/>
+    <button class="btn-primary" id="chatSend">Send</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  const btn = document.getElementById('chatBtn');
+  const panel = document.getElementById('chatPanel');
+  const msgs = document.getElementById('chatMsgs');
+  const input = document.getElementById('chatInput');
+  const chips = document.getElementById('chatChips');
+  const QUESTIONS = [
+    'What does AQI mean?',
+    'What is PM2.5?',
+    'Which city is the most polluted?',
+    'What is the average AQI of Delhi?'
+  ];
+
+  function addMsg(text, who) {
+    const d = document.createElement('div');
+    d.className = 'msg ' + who;
+    d.textContent = text;            // textContent keeps it safe
+    msgs.appendChild(d);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  async function send(q) {
+    q = (q || '').trim();
+    if (!q) return;
+    addMsg(q, 'user');
+    input.value = '';
+    const typing = document.createElement('div');
+    typing.className = 'msg bot typing';
+    typing.innerHTML = '<span></span><span></span><span></span>';
+    msgs.appendChild(typing);
+    msgs.scrollTop = msgs.scrollHeight;
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q })
+      });
+      const json = await res.json();
+      typing.remove();
+      addMsg(json.answer || json.error || 'Sorry, I could not answer that.', 'bot');
+    } catch (e) {
+      typing.remove();
+      addMsg('Could not reach the server. Is the app running?', 'bot');
+    }
+  }
+
+  QUESTIONS.forEach(q => {
+    const c = document.createElement('button');
+    c.className = 'chip';
+    c.textContent = q;
+    c.onclick = () => send(q);
+    chips.appendChild(c);
+  });
+
+  btn.onclick = () => {
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open')) input.focus();
+  };
+  document.getElementById('chatClose').onclick = () => panel.classList.remove('open');
+  document.getElementById('chatSend').onclick = () => send(input.value);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') send(input.value); });
+
+  addMsg('Hi! Ask me about air quality in the 26 cities. Educational only, not medical advice.', 'bot');
+})();
+</script>
+
+</body>
+</html>
